@@ -13,10 +13,44 @@ class PreviewHandler:
         self.config = configuration.conf.preview
         self._ensure_output_directory()
     
+    def _resolve_output_directory(self):
+        """
+        Resolve output directory based on environment and platform
+        Returns the actual path where files should be saved
+        """
+        configured_path = self.config.output_directory
+        
+        # Check if we're in a Docker container by looking for /.dockerenv
+        # This is the standard way to detect Docker environment
+        is_docker = os.path.exists('/.dockerenv')
+        
+        if is_docker:
+            # In Docker, use configured path as-is
+            return configured_path
+        else:
+            # Not in Docker - handle Docker-style paths
+            if configured_path.startswith('/app/config/'):
+                # Convert Docker path to local relative path
+                relative_path = configured_path.replace('/app/config/', './config/')
+                return relative_path
+            elif os.path.isabs(configured_path):
+                # Absolute path - use as-is (works on all platforms)
+                return configured_path
+            else:
+                # Relative path - use as-is (works on all platforms)
+                return configured_path
+    
     def _ensure_output_directory(self):
         """Create output directory if it doesn't exist"""
         if self.config.enabled:
-            os.makedirs(self.config.output_directory, exist_ok=True)
+            actual_path = self._resolve_output_directory()
+            try:
+                os.makedirs(actual_path, exist_ok=True)
+                # Log the actual path being used
+                configuration.logging.info(f"Preview directory: {os.path.abspath(actual_path)}")
+            except Exception as e:
+                configuration.logging.error(f"Failed to create preview directory '{actual_path}': {e}")
+                raise
     
     def _generate_filename(self, suffix=""):
         """Generate filename with date/timestamp placeholders"""
@@ -32,7 +66,9 @@ class PreviewHandler:
             name, ext = os.path.splitext(filename)
             filename = f"{name}_{suffix}{ext}"
             
-        return os.path.join(self.config.output_directory, filename)
+        # Use resolved directory path
+        output_dir = self._resolve_output_directory()
+        return os.path.join(output_dir, filename)
     
     def _add_metadata_to_html(self, html_content, metadata):
         """Add metadata to HTML as comments"""
@@ -74,25 +110,35 @@ SMTP Tested: {metadata.get('smtp_tested', 'N/A')}
         if not self.config.enabled:
             return None, None
             
-        # Generate filenames
-        html_file = self._generate_filename()
-        
-        # Add metadata to HTML
-        if self.config.include_metadata:
-            html_content = self._add_metadata_to_html(html_content, metadata)
-        
-        # Save HTML file
-        with open(html_file, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        # Save JSON metadata if enabled
-        json_file = None
-        if self.config.save_email_data:
-            json_file = self._generate_filename("data").replace('.html', '.json')
-            with open(json_file, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False, default=str)
-        
-        return html_file, json_file
+        try:
+            # Generate filenames
+            html_file = self._generate_filename()
+            
+            # Add metadata to HTML
+            if self.config.include_metadata:
+                html_content = self._add_metadata_to_html(html_content, metadata)
+            
+            # Save HTML file
+            with open(html_file, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Save JSON metadata if enabled
+            json_file = None
+            if self.config.save_email_data:
+                json_file = self._generate_filename("data").replace('.html', '.json')
+                with open(json_file, 'w', encoding='utf-8') as f:
+                    json.dump(metadata, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Log actual file locations
+            configuration.logging.info(f"Preview saved: {os.path.abspath(html_file)}")
+            if json_file:
+                configuration.logging.info(f"Metadata saved: {os.path.abspath(json_file)}")
+            
+            return html_file, json_file
+            
+        except Exception as e:
+            configuration.logging.error(f"Failed to save preview files: {e}")
+            raise
     
     def get_metadata(self, movies, series, total_tv, total_movie, mode="preview", smtp_tested=False):
         """
