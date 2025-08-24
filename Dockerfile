@@ -1,31 +1,26 @@
+# syntax=docker/dockerfile:1.4
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends locales python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools gcc gosu
+# Install only runtime packages; skip heavy build toolchains
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gosu \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN echo "fr_FR.UTF-8 UTF-8" >> /etc/locale.gen && \
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
-    locale-gen
+# Leverage layer cache for dependencies
+COPY requirements.txt /app/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
-ENV LANG=en_US.UTF-8 \
-    LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8
-
-COPY requirements.txt /app
+# App files
 COPY VERSION /app
-
-RUN pip install --no-cache --upgrade pip setuptools
-
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-RUN apt-get remove -y python3-dev build-essential libssl-dev libffi-dev python3-setuptools gcc
-
-RUN apt-get autoremove -y
-
-RUN mkdir -p /app/config
-
 COPY source /app/source
 COPY main.py /app
 COPY template /app/template
@@ -33,6 +28,6 @@ COPY assets /app/assets
 COPY entrypoint.sh /app/entrypoint.sh
 COPY config/config-example.yml /app/default/config-example.yml
 
-RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh && mkdir -p /app/config
 
 ENTRYPOINT ["/app/entrypoint.sh"]

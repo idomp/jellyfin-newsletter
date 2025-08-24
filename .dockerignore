@@ -1,0 +1,28 @@
+# Exclude VCS and local environments
+.git/
+.gitignore
+.vscode/
+.idea/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node-related (if present)
+node_modules/
+
+# Test artifacts and caches
+.coverage
+pytest_cache/
+
+# Local config that should not be sent as build context (we mount it at runtime)
+# Exclude all config files from the build context except the example config used in image
+config/*
+!config/config-example.yml
+
+# Not needed in image context
+*.log
